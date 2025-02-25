@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>抖音评论获取系统</title>
+    <style>
+        /* 保持原有所有样式不变 */
+        :root {
+            --primary-color: #4CAF50;
+            --active-color: #45a049;
+            --secondary-color: #2196F3;
+            --bg-color: #f0f2f5;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: var(--bg-color);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 800px;
+            padding: 2rem 0;
+        }
+
+        .input-group {
+            background: white;
+            padding: 2rem;
+            border-radius: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 1rem;
+        }
+
+        #videoInput {
+            flex: 1;
+            padding: 14px 20px;
+            border: 2px solid #ddd;
+            border-radius: 30px;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+
+        #videoInput:focus {
+            border-color: var(--primary-color);
+            outline: none;
+        }
+
+        .get-btn {
+            padding: 14px 30px;
+            border: none;
+            border-radius: 30px;
+            background: var(--primary-color);
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: opacity 0.3s;
+        }
+
+        .mode-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 30px;
+            background: #e0e0e0;
+            color: #666;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .mode-btn.active {
+            background: var(--secondary-color);
+            color: white;
+        }
+
+        .video-selector {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 12px;
+            margin-top: 1rem;
+            display: none;
+        }
+
+        .comment-list {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            padding: 1rem;
+        }
+
+        .comment-item {
+            padding: 1.5rem;
+            border-bottom: 1px solid #eee;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .avatar {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            margin-right: 1rem;
+        }
+
+        .username {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 16px;
+        }
+
+        .meta {
+            color: #666;
+            font-size: 14px;
+            margin-top: 0.5rem;
+        }
+
+        .like-icon {
+            color: #ff4081;
+            display: inline-block;
+            margin-right: 4px;
+        }
+
+        #loading {
+            text-align: center;
+            padding: 2rem;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="input-group">
+            <div class="input-row">
+                <input type="text" id="videoInput" placeholder="输入链接">
+                <button class="get-btn" onclick="handleGet()">立即获取</button>
+            </div>
+            
+            <div class="mode-group">
+                <button class="mode-btn active" data-mode="video" onclick="switchMode('video')">视频模式</button>
+                <button class="mode-btn" data-mode="profile" onclick="switchMode('profile')">用户模式</button>
+            </div>
+            
+            <select class="video-selector" id="videoSelector">
+                <option value="">请选择视频</option>
+            </select>
+        </div>
+
+        <div class="comment-list" id="commentList"></div>
+        <div id="loading">加载中...</div>
+    </div>
+
+    <script>
+        let current = {
+            mode: 'video',
+            cursor: 0,
+            hasMore: true,
+            isLoading: false,
+            videoId: null,
+            currentUrl: '' // 新增：记录当前请求的URL
+        }
+
+        // 模式切换
+        function switchMode(mode) {
+            current.mode = mode
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.mode === mode)
+            })
+            document.getElementById('videoInput').placeholder = 
+                mode === 'video' ? '输入视频链接' : '输入用户主页链接'
+            document.getElementById('videoSelector').style.display = 
+                mode === 'profile' ? 'block' : 'none'
+            resetState()
+        }
+
+        // 处理获取操作（关键修复）
+        async function handleGet() {
+            const newUrl = document.getElementById('videoInput').value
+            
+            // 视频模式：当URL变化时重置状态
+            if (current.mode === 'video' && newUrl !== current.currentUrl) {
+                resetState()
+                current.currentUrl = newUrl
+            }
+            
+            if (current.mode === 'video') {
+                await loadVideoComments()
+            } else {
+                await loadProfileVideos()
+            }
+        }
+
+        // 加载视频评论（关键修复）
+        async function loadVideoComments() {
+            if (current.isLoading || !current.hasMore) return
+            
+            current.isLoading = true
+            showLoading()
+
+            try {
+                const params = {
+                    cursor: current.cursor
+                }
+
+                if (current.mode === 'video') {
+                    params.video_url = current.currentUrl
+                } else {
+                    params.aweme_id = current.videoId
+                }
+
+                const res = await fetch('/get_comments', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(params)
+                })
+                
+                const data = await res.json()
+                if (data.error) throw new Error(data.error)
+
+                // 当cursor为0时清空旧数据
+                if (current.cursor === 0) {
+                    document.getElementById('commentList').innerHTML = ''
+                }
+
+                renderComments(data.comments)
+                current.hasMore = data.has_more
+                current.cursor = data.cursor
+            } catch (err) {
+                alert('加载失败: ' + err.message)
+            } finally {
+                current.isLoading = false
+                hideLoading()
+            }
+        }
+
+        // 加载用户视频列表
+        async function loadProfileVideos() {
+            const profileUrl = document.getElementById('videoInput').value
+            if (!profileUrl) return alert('请输入用户主页链接')
+
+            showLoading()
+            try {
+                const res = await fetch('/get_user_videos', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({profile_url: profileUrl})
+                })
+                
+                const data = await res.json()
+                if (data.error) throw new Error(data.error)
+                
+                const selector = document.getElementById('videoSelector')
+                selector.innerHTML = '<option value="">请选择视频</option>'
+                data.videos.forEach(video => {
+                    const option = document.createElement('option')
+                    option.value = video.aweme_id
+                    option.textContent = video.desc.substring(0, 35) + (video.desc.length > 35 ? '...' : '')
+                    option.title = video.desc
+                    selector.appendChild(option)
+                })
+                
+            } catch (err) {
+                alert('加载失败: ' + err.message)
+            }
+            hideLoading()
+        }
+
+        // 视频选择处理
+        document.getElementById('videoSelector').addEventListener('change', async function() {
+            if (this.value) {
+                resetState()
+                current.videoId = this.value
+                await loadVideoComments()
+            }
+        })
+
+        // 渲染评论
+        function renderComments(comments) {
+            const container = document.getElementById('commentList')
+            
+            comments.forEach(comment => {
+                const div = document.createElement('div')
+                div.className = 'comment-item'
+                const likeColor = comment.digg_count > 0 ? 'style="color:#ff4081"' : ''
+                div.innerHTML = `
+                    <div class="user-info">
+                        <img src="${comment.avatar}" class="avatar">
+                        <div>
+                            <a href="https://www.douyin.com/user/${comment.sec_uid}" 
+                               target="_blank" 
+                               class="username">
+                                ${comment.username}
+                            </a>
+                            <div class="meta">
+                                <span>${comment.region}</span>
+                                <span>·</span>
+                                <span>${new Date(comment.time * 1000).toLocaleDateString()}</span>
+                                <span><span class="like-icon" ${likeColor}>❤</span> ${comment.digg_count}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <p>${comment.content}</p>
+                `
+                container.appendChild(div)
+            })
+        }
+
+        // 滚动加载
+        window.onscroll = () => {
+            const { scrollTop, scrollHeight, clientHeight } = document.documentElement
+            if (scrollTop + clientHeight >= scrollHeight - 100 && current.hasMore) {
+                loadVideoComments()
+            }
+        }
+
+        // 工具函数
+        function showLoading() {
+            document.getElementById('loading').style.display = 'block'
+        }
+        
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none'
+        }
+        
+        function resetState() {
+            current.cursor = 0
+            current.hasMore = true
+            current.videoId = null
+            document.getElementById('commentList').innerHTML = ''
+        }
+
+        // 输入框回车触发
+        document.getElementById('videoInput').addEventListener('keypress', e => {
+            if (e.key === 'Enter') handleGet()
+        })
+    </script>
+</body>
+</html>
